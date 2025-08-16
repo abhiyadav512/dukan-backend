@@ -12,7 +12,7 @@ const passwordSchema = z
 
 const nameSchema = z
   .string()
-  .min(20, "Name must be at least 20 characters")
+  .min(10, "Name must be at least 10 characters")
   .max(60, "Name must not exceed 60 characters")
   .trim();
 
@@ -46,14 +46,12 @@ const adminCreateUserSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   address: addressSchema,
-  role: z.enum(["ADMIN", "USER", "STORE_OWNER"]).optional().default("USER"),
 });
 
 const storeCreationSchema = z.object({
   name: nameSchema,
   email: emailSchema,
   address: addressSchema,
-  ownerId: z.string()
 });
 
 const ratingSubmissionSchema = z.object({
@@ -86,7 +84,6 @@ const userListSchema = z.object({
   name: z.string().optional(),
   email: z.string().optional(),
   address: z.string().optional(),
-  role: z.enum(["ADMIN", "USER", "STORE_OWNER"]).optional(),
   page: z.preprocess(
     (val) => Number(val),
     z.number().int().positive().default(1)
@@ -96,7 +93,7 @@ const userListSchema = z.object({
     z.number().int().positive().default(10)
   ),
   sortBy: z
-    .enum(["name", "email", "address", "role"])
+    .enum(["name", "email", "address"])
     .optional()
     .default("name"),
   sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),

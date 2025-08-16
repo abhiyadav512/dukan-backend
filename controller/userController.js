@@ -9,13 +9,15 @@ const getStores = async (req, res) => {
     if (name) where.name = { contains: name, mode: "insensitive" };
     if (address) where.address = { contains: address, mode: "insensitive" };
 
-    const offset = (page - 1) * limit;
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 10;
+    const offset = (pageNum - 1) * limitNum;
 
     const [stores, total] = await Promise.all([
       prisma.store.findMany({
         where,
         skip: offset,
-        take: parseInt(limit),
+        take: limitNum,
         include: {
           ratings: {
             select: {
@@ -29,18 +31,17 @@ const getStores = async (req, res) => {
     ]);
 
     let storesWithRatings = stores.map((store) => {
-        console.log(store)
       const ratings = store.ratings;
       let averageRating = 0;
       let userRating = null;
 
       if (ratings.length > 0) {
-        const totalRating = ratings.reduce((sum, r) => sum + r.rating, 0);
+        const totalRating = ratings.reduce((sum, r) => sum + r.value, 0);
         averageRating = Number((totalRating / ratings.length).toFixed(2));
 
         const userRatingObj = ratings.find((r) => r.userId === userId);
         if (userRatingObj) {
-          userRating = userRatingObj.rating;
+          userRating = userRatingObj.value;
         }
       }
 
@@ -65,10 +66,10 @@ const getStores = async (req, res) => {
     res.json({
       stores: storesWithRatings,
       pagination: {
-        page,
-        limit,
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / limitNum),
       },
     });
   } catch (error) {
@@ -112,7 +113,7 @@ const submitRating = async (req, res) => {
             storeId,
           },
         },
-        data: { value:rating },
+        data: { value: rating },
         include: {
           store: {
             select: {
@@ -124,7 +125,7 @@ const submitRating = async (req, res) => {
     } else {
       result = await prisma.rating.create({
         data: {
-          value:rating,
+          value: rating,
           userId,
           storeId,
         },

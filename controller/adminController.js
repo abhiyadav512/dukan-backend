@@ -3,10 +3,9 @@ const prisma = require("../config/db");
 
 const getDashboard = async (req, res) => {
   try {
-    // All queries start at the same time,instead of one after another.
     const [totalUsers, totalStores, totalRatings] = await Promise.all([
       prisma.user.count(),
-      prisma.ownedStore.count(),
+      prisma.store.count(),
       prisma.rating.count(),
     ]);
 
@@ -27,7 +26,7 @@ const getDashboard = async (req, res) => {
 
 const createUser = async (req, res) => {
   try {
-    const { name, email, password, address, role } = req.body;
+    const { name, email, password, address } = req.body;
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
@@ -47,14 +46,12 @@ const createUser = async (req, res) => {
         email,
         password: hashedPassword,
         address,
-        role,
       },
       select: {
         id: true,
         name: true,
         email: true,
         address: true,
-        role: true,
         createdAt: true,
       },
     });
@@ -73,85 +70,28 @@ const createUser = async (req, res) => {
 
 const getUsers = async (req, res) => {
   try {
-    const { name, email, address, role, page, limit, sortBy, sortOrder } =
-      req.query;
+    const {
+      name,
+      email,
+      address,
+      role,
+      page = 1,
+      limit = 10,
+      minRating,
+      sortBy = "name",
+      sortOrder = "asc",
+    } = req.query;
 
     const where = {};
     if (name) where.name = { contains: name, mode: "insensitive" };
     if (email) where.email = { contains: email, mode: "insensitive" };
     if (address) where.address = { contains: address, mode: "insensitive" };
-    if (role) where.role = role;
+    if (role) where.role = role.toUpperCase();
 
-    const offset = (page - 1) * limit;
-
-    const orderBy = { [sortBy]: sortOrder };
-
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        skip: offset,
-        take: parseInt(limit),
-        orderBy,
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          address: true,
-          role: true,
-          createdAt: true,
-          ownedStore: {
-            select: {
-              id: true,
-              name: true,
-              ratings: {
-                select: {
-                  value: true,
-                },
-              },
-            },
-          },
-        },
-      }),
-      prisma.user.count({ where }),
-    ]);
-
-    const usersWithRatings = users.map((user) => {
-      if (user.store && user.ownedStore.ratings.length > 0) {
-        const totalRating = user.ownedStore.ratings.reduce(
-          (sum, r) => sum + r.rating,
-          0
-        );
-        user.ownedStore.averageRating = Number(
-          (totalRating / user.ownedStore.ratings.length).toFixed(2)
-        );
-        delete user.ownedStore.ratings;
-      }
-      return user;
-    });
-
-    res.json({
-      users: usersWithRatings,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    });
-  } catch (error) {
-    console.error("Get users error:", error);
-    res.status(500).json({
-      error: "Internal server error",
-    });
-  }
-};
-
-const getUserById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const user = await prisma.user.findUnique({
-      where: { id: id },
+    // Fetch more users to apply rating filter correctly
+    const users = await prisma.user.findMany({
+      where,
+      orderBy: { [sortBy]: sortOrder },
       select: {
         id: true,
         name: true,
@@ -163,51 +103,66 @@ const getUserById = async (req, res) => {
           select: {
             id: true,
             name: true,
-            email: true,
-            address: true,
             ratings: {
-              select: {
-                value: true,
-                user: {
-                  select: {
-                    name: true,
-                  },
-                },
-              },
+              select: { value: true },
             },
           },
         },
       },
     });
 
-    if (!user) {
-      return res.status(404).json({
-        error: "User not found",
-      });
-    }
-
-    if (user.store && user.ownedStore.ratings.length > 0) {
-      const totalRating = user.ownedStore.ratings.reduce(
-        (sum, r) => sum + r.rating,
-        0
-      );
-      user.ownedStore.averageRating = Number(
-        (totalRating / user.ownedStore.ratings.length).toFixed(2)
-      );
-    }
-
-    res.json({ user });
-  } catch (error) {
-    console.error("Get user by ID error:", error);
-    res.status(500).json({
-      error: "Internal server error",
+    // Calculate average rating
+    let usersWithRatings = users.map((user) => {
+      const ratings = user.ownedStore?.ratings || [];
+      const avgRating =
+        ratings.length > 0
+          ? Number(
+              (
+                ratings.reduce((sum, r) => sum + r.value, 0) / ratings.length
+              ).toFixed(2)
+            )
+          : 0;
+      if (user.ownedStore) {
+        user.ownedStore.averageRating = avgRating;
+        delete user.ownedStore.ratings;
+      }
+      return user;
     });
+
+    // Filter by minRating if provided
+    if (minRating) {
+      usersWithRatings = usersWithRatings.filter(
+        (user) => (user.ownedStore?.averageRating || 0) >= Number(minRating)
+      );
+    }
+
+    const total = usersWithRatings.length;
+    const currentPage = Number(page);
+    const perPage = Number(limit);
+    const start = (currentPage - 1) * perPage;
+    const end = start + perPage;
+
+    const paginatedUsers = usersWithRatings.slice(start, end);
+
+    res.json({
+      users: paginatedUsers,
+      pagination: {
+        page: currentPage,
+        limit: perPage,
+        total,
+        pages: Math.ceil(total / perPage),
+      },
+    });
+  } catch (error) {
+    console.error("Get users error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
+
 const createStore = async (req, res) => {
   try {
-    const { name, email, address, ownerId } = req.body;
+    const { name, email, address } = req.body;
 
     const existingStore = await prisma.store.findUnique({
       where: { email },
@@ -220,7 +175,7 @@ const createStore = async (req, res) => {
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: ownerId },
+      where: { email: email },
       include: { ownedStore: true },
     });
 
@@ -242,7 +197,9 @@ const createStore = async (req, res) => {
           name,
           email,
           address,
-          ownerId,
+          owner: {
+            connect: { id: user.id },
+          },
         },
         include: {
           owner: {
@@ -256,7 +213,7 @@ const createStore = async (req, res) => {
       });
 
       await tx.user.update({
-        where: { id: ownerId },
+        where: { id: user.id },
         data: { role: "STORE_OWNER" },
       });
 
@@ -314,14 +271,14 @@ const getStores = async (req, res) => {
       let averageRating = 0;
 
       if (ratings.length > 0) {
-        const totalRating = ratings.reduce((sum, r) => sum + r.rating, 0);
+        const totalRating = ratings.reduce((sum, r) => sum + r.value, 0);
         averageRating = Number((totalRating / ratings.length).toFixed(2));
       }
 
       return {
         ...store,
         averageRating,
-        ratings: undefined, 
+        ratings: undefined,
       };
     });
 
@@ -354,7 +311,6 @@ module.exports = {
   getDashboard,
   createUser,
   getUsers,
-  getUserById,
   createStore,
   getStores,
 };

@@ -35,7 +35,6 @@ const getDashboard = async (req, res) => {
       const totalRating = store.ratings.reduce((sum, r) => sum + r.value, 0);
       averageRating = Number((totalRating / store.ratings.length).toFixed(2));
     }
-
     const ratingUsers = store.ratings.map((rating) => ({
       id: rating.id,
       value: rating.value,

@@ -82,8 +82,11 @@ const login = async (req, res) => {
 
     const token = generateToken(user.id);
 
+    const { password:_, ...safeData } = user;
+
     res.json({
       message: "Login successful",
+      user: safeData,
       token,
     });
   } catch (error) {
@@ -180,7 +183,8 @@ const getProfile = async (req, res) => {
         (sum, r) => sum + r.rating,
         0
       );
-      user.ownedStore.averageRating = totalRating / user.ownedStore.ratings.length;
+      user.ownedStore.averageRating =
+        totalRating / user.ownedStore.ratings.length;
       delete user.ownedStore.ratings;
     }
 
