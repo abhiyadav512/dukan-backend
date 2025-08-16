@@ -95,7 +95,7 @@ const getRatingUsers = async (req, res) => {
     } else {
       orderBy[sortBy] = sortOrder;
     }
-    console.log(orderBy);
+    // console.log(orderBy);
 
     const [ratings, total] = await Promise.all([
       prisma.rating.findMany({
